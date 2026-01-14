@@ -2,13 +2,53 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertContactSchema } from "@shared/schema";
+import { isAuthenticated, verifyCredentials } from "./auth";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
-  app.get("/api/contacts", async (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email et mot de passe requis" });
+      }
+
+      const isValid = await verifyCredentials(email, password);
+      
+      if (isValid) {
+        req.session.isAuthenticated = true;
+        req.session.userEmail = email;
+        res.json({ success: true, email });
+      } else {
+        res.status(401).json({ error: "Identifiants invalides" });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Erreur de connexion" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ error: "Erreur de déconnexion" });
+      }
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/auth/session", (req, res) => {
+    res.json({
+      isAuthenticated: !!req.session.isAuthenticated,
+      email: req.session.userEmail || null,
+    });
+  });
+
+  app.get("/api/contacts", isAuthenticated, async (req, res) => {
     try {
       const { search, statut, consultant, scpi, annee } = req.query;
       
@@ -34,7 +74,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/contacts/:id", async (req, res) => {
+  app.get("/api/contacts/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const contact = await storage.getContactById(id);
@@ -50,7 +90,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", isAuthenticated, async (req, res) => {
     try {
       const stats = await storage.getStats();
       res.json(stats);
@@ -60,7 +100,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/contacts", async (req, res) => {
+  app.post("/api/contacts", isAuthenticated, async (req, res) => {
     try {
       const validatedData = insertContactSchema.parse(req.body);
       const contact = await storage.createContact(validatedData);

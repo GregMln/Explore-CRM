@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Search, Users, UserCheck, TrendingUp, Building2, Filter, X, ChevronLeft, ChevronRight, Phone, Mail, MapPin, Calendar, MessageSquare, Tag, User, BarChart3, PieChart, Activity, Euro, Menu } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, Users, UserCheck, TrendingUp, Building2, Filter, X, ChevronLeft, ChevronRight, Phone, Mail, MapPin, Calendar, MessageSquare, Tag, User, BarChart3, PieChart, Activity, Euro, Menu, LogOut } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 
 interface Contact {
   id: number;
@@ -44,6 +45,8 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function CRMApplication() {
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [activeView, setActiveView] = useState('dashboard');
   const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState({ statut: '', consultant: '', scpi: '', annee: '' });
@@ -52,6 +55,18 @@ export default function CRMApplication() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
+
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!res.ok) throw new Error('Logout failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.clear();
+      setLocation('/login');
+    },
+  });
 
   const debouncedSearchQuery = useDebounce(searchInput, 400);
 
@@ -246,7 +261,10 @@ export default function CRMApplication() {
           {isFetching && <div style={{ position: 'absolute', right: 40, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />}
           {searchInput && <button onClick={() => setSearchInput('')} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }} data-testid="button-clear-search"><X size={16} /></button>}
         </div>
-        <button onClick={handleToggleFilters} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 14 }} data-testid="button-toggle-filters"><Filter size={16} /><span style={{ display: 'none' }} className="filter-text">Filtres</span>{activeFiltersCount > 0 && <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: 20, fontSize: 12 }}>{activeFiltersCount}</span>}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleToggleFilters} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 14 }} data-testid="button-toggle-filters"><Filter size={16} /><span style={{ display: 'none' }} className="filter-text">Filtres</span>{activeFiltersCount > 0 && <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: 20, fontSize: 12 }}>{activeFiltersCount}</span>}</button>
+          <button onClick={() => logoutMutation.mutate()} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }} title="Déconnexion" data-testid="button-logout"><LogOut size={16} /></button>
+        </div>
       </header>
 
       <div style={{ display: 'flex', position: 'relative' }}>
