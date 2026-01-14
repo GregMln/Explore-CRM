@@ -44,20 +44,25 @@ export function isAuthenticated(req: Request, res: Response, next: NextFunction)
 }
 
 export async function verifyCredentials(email: string, password: string): Promise<boolean> {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+  const adminEmail = process.env.ADMIN_EMAIL?.trim();
+  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH?.trim();
 
   if (!adminEmail || !adminPasswordHash) {
-    console.error("Admin credentials not configured");
+    console.error("Admin credentials not configured. ADMIN_EMAIL:", !!process.env.ADMIN_EMAIL, "ADMIN_PASSWORD_HASH:", !!process.env.ADMIN_PASSWORD_HASH);
     return false;
   }
 
-  if (email.toLowerCase() !== adminEmail.toLowerCase()) {
+  if (email.trim().toLowerCase() !== adminEmail.toLowerCase()) {
+    console.log("Email mismatch");
     return false;
   }
 
   try {
-    return await bcrypt.compare(password, adminPasswordHash);
+    const result = await bcrypt.compare(password, adminPasswordHash);
+    if (!result) {
+      console.log("Password mismatch");
+    }
+    return result;
   } catch (error) {
     console.error("Password verification error:", error);
     return false;
