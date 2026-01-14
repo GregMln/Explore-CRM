@@ -1,65 +1,90 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Users, UserCheck, TrendingUp, Building2, Filter, X, ChevronLeft, ChevronRight, Phone, Mail, MapPin, Calendar, MessageSquare, Tag, User, BarChart3, PieChart, Activity, Euro } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
-// Importer les données depuis le fichier JSON
-import crmData from './crm-data.json';
+interface Contact {
+  id: number;
+  nom: string;
+  email: string | null;
+  telephone: string | null;
+  mobile: string | null;
+  adresse: string | null;
+  statut: string | null;
+  consultant: string | null;
+  commentaires: string | null;
+  date_creation: string | null;
+  scpi: string | null;
+  marketing: string | null;
+  montant: number | null;
+}
 
-const CONTACTS_DATA = crmData.contacts;
-const STATS_DATA = crmData.stats;
+interface Stats {
+  total: number;
+  clients: number;
+  prospects: number;
+  consultants: Record<string, number>;
+  scpi: Record<string, number>;
+  annees: Record<string, number>;
+}
 
 export default function CRMApplication() {
   const [activeView, setActiveView] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({ statut: '', consultant: '', scpi: '', annee: '' });
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedContact, setSelectedContact] = useState(null);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
 
-  const filterOptions = useMemo(() => {
-    const consultants = [...new Set(CONTACTS_DATA.map(c => c.consultant).filter(Boolean))].sort();
-    const scpisSet = new Set();
-    CONTACTS_DATA.forEach(c => { if (c.scpi) c.scpi.split(' - ').forEach(s => scpisSet.add(s.trim())); });
-    const scpis = [...scpisSet].sort();
-    const statuts = [...new Set(CONTACTS_DATA.map(c => c.statut).filter(Boolean))];
-    const annees = [...new Set(CONTACTS_DATA.map(c => { const m = c.date_creation ? c.date_creation.match(/(\d{4})/) : null; return m ? m[1] : null; }).filter(Boolean))].sort().reverse();
-    return { consultants, scpis, statuts, annees };
-  }, []);
+  const { data: contacts = [], isLoading: contactsLoading } = useQuery<Contact[]>({
+    queryKey: ['/api/contacts', searchQuery, filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (filters.statut) params.append('statut', filters.statut);
+      if (filters.consultant) params.append('consultant', filters.consultant);
+      if (filters.scpi) params.append('scpi', filters.scpi);
+      if (filters.annee) params.append('annee', filters.annee);
+      
+      const res = await fetch(`/api/contacts?${params}`);
+      if (!res.ok) throw new Error('Failed to fetch contacts');
+      return res.json();
+    },
+  });
 
-  const filteredContacts = useMemo(() => {
-    let results = CONTACTS_DATA;
-    if (searchQuery && searchQuery.trim().length > 0) {
-      const query = searchQuery.toLowerCase().trim();
-      results = results.filter(contact => {
-        const nom = (contact.nom || '').toLowerCase();
-        const email = (contact.email || '').toLowerCase();
-        const telephone = (contact.telephone || '').toLowerCase();
-        const mobile = (contact.mobile || '').toLowerCase();
-        const adresse = (contact.adresse || '').toLowerCase();
-        const commentaires = (contact.commentaires || '').toLowerCase();
-        return nom.includes(query) || email.includes(query) || telephone.includes(query) || mobile.includes(query) || adresse.includes(query) || commentaires.includes(query);
-      });
-    }
-    if (filters.statut) results = results.filter(c => c.statut === filters.statut);
-    if (filters.consultant) results = results.filter(c => c.consultant && c.consultant.includes(filters.consultant));
-    if (filters.scpi) results = results.filter(c => c.scpi && c.scpi.includes(filters.scpi));
-    if (filters.annee) results = results.filter(c => c.date_creation && c.date_creation.includes(filters.annee));
-    return results;
-  }, [searchQuery, filters]);
+  const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
+    queryKey: ['/api/stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/stats');
+      if (!res.ok) throw new Error('Failed to fetch stats');
+      return res.json();
+    },
+  });
+
+  const filterOptions = useMemo(() => {
+    if (!stats) return { consultants: [], scpis: [], statuts: [], annees: [] };
+    
+    const consultants = Object.keys(stats.consultants).sort();
+    const scpis = Object.keys(stats.scpi).sort();
+    const statuts = ['Client', 'Prospect', 'Société de gestion'];
+    const annees = Object.keys(stats.annees).sort().reverse();
+    
+    return { consultants, scpis, statuts, annees };
+  }, [stats]);
 
   const paginatedContacts = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
-    return filteredContacts.slice(start, start + itemsPerPage);
-  }, [filteredContacts, currentPage]);
+    return contacts.slice(start, start + itemsPerPage);
+  }, [contacts, currentPage]);
 
-  const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
+  const totalPages = Math.ceil(contacts.length / itemsPerPage);
   useEffect(() => { setCurrentPage(1); }, [searchQuery, filters]);
 
   const clearFilters = () => { setFilters({ statut: '', consultant: '', scpi: '', annee: '' }); setSearchQuery(''); };
   const activeFiltersCount = Object.values(filters).filter(Boolean).length + (searchQuery ? 1 : 0);
-  const formatMontant = (m) => m ? new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(m) : null;
+  const formatMontant = (m: number | null) => m ? new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(m) : null;
 
-  const handleSearchChange = (e) => {
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
     if (value.trim().length > 0) { setActiveView('contacts'); setSelectedContact(null); }
@@ -71,10 +96,22 @@ export default function CRMApplication() {
     if (newState) { setActiveView('contacts'); setSelectedContact(null); }
   };
 
-  const handleFilterChange = (filterName, value) => {
+  const handleFilterChange = (filterName: string, value: string) => {
     setFilters({...filters, [filterName]: value});
     if (value) { setActiveView('contacts'); setSelectedContact(null); }
   };
+
+  if (contactsLoading || statsLoading || !stats) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e2e8f0', fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 64, height: 64, border: '4px solid rgba(99,102,241,0.2)', borderTopColor: '#6366f1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
+          <p style={{ fontSize: 18, fontWeight: 600 }}>Chargement des données...</p>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', fontFamily: "'DM Sans', sans-serif", color: '#e2e8f0' }}>
@@ -107,30 +144,30 @@ export default function CRMApplication() {
           <div style={{ width: 44, height: 44, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Users size={24} color="white" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, background: 'linear-gradient(135deg, #e2e8f0, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>CRM Explorer</h1>
-            <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>{STATS_DATA.total.toLocaleString()} contacts</p>
+            <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>{stats.total.toLocaleString()} contacts</p>
           </div>
         </div>
         <div style={{ flex: 1, maxWidth: 500, margin: '0 40px', position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
-          <input type="text" placeholder="Rechercher..." value={searchQuery} onChange={handleSearchChange} className="input-field" style={{ paddingLeft: 48 }} />
-          {searchQuery && <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}><X size={16} /></button>}
+          <input type="text" placeholder="Rechercher..." value={searchQuery} onChange={handleSearchChange} className="input-field" style={{ paddingLeft: 48 }} data-testid="input-search" />
+          {searchQuery && <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }} data-testid="button-clear-search"><X size={16} /></button>}
         </div>
-        <button onClick={handleToggleFilters} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Filter size={16} />Filtres{activeFiltersCount > 0 && <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: 20, fontSize: 12 }}>{activeFiltersCount}</span>}</button>
+        <button onClick={handleToggleFilters} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8 }} data-testid="button-toggle-filters"><Filter size={16} />Filtres{activeFiltersCount > 0 && <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: 20, fontSize: 12 }}>{activeFiltersCount}</span>}</button>
       </header>
 
       <div style={{ display: 'flex' }}>
         <nav style={{ width: 240, padding: '24px 16px', borderRight: '1px solid rgba(255,255,255,0.05)', minHeight: 'calc(100vh - 85px)', background: 'rgba(15,23,42,0.5)' }}>
-          <div className={`nav-item ${activeView === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveView('dashboard'); setSelectedContact(null); }}><BarChart3 size={20} /><span>Tableau de bord</span></div>
-          <div className={`nav-item ${activeView === 'contacts' && !filters.statut ? 'active' : ''}`} onClick={() => { setActiveView('contacts'); setSelectedContact(null); clearFilters(); }}><Users size={20} /><span>Contacts</span></div>
-          <div className={`nav-item ${filters.statut === 'Client' ? 'active' : ''}`} onClick={() => { setActiveView('contacts'); setFilters({statut: 'Client', consultant: '', scpi: '', annee: ''}); setSelectedContact(null); }}><UserCheck size={20} /><span>Clients</span></div>
-          <div className={`nav-item ${filters.statut === 'Prospect' ? 'active' : ''}`} onClick={() => { setActiveView('contacts'); setFilters({statut: 'Prospect', consultant: '', scpi: '', annee: ''}); setSelectedContact(null); }}><TrendingUp size={20} /><span>Prospects</span></div>
+          <div className={`nav-item ${activeView === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveView('dashboard'); setSelectedContact(null); }} data-testid="nav-dashboard"><BarChart3 size={20} /><span>Tableau de bord</span></div>
+          <div className={`nav-item ${activeView === 'contacts' && !filters.statut ? 'active' : ''}`} onClick={() => { setActiveView('contacts'); setSelectedContact(null); clearFilters(); }} data-testid="nav-contacts"><Users size={20} /><span>Contacts</span></div>
+          <div className={`nav-item ${filters.statut === 'Client' ? 'active' : ''}`} onClick={() => { setActiveView('contacts'); setFilters({statut: 'Client', consultant: '', scpi: '', annee: ''}); setSelectedContact(null); }} data-testid="nav-clients"><UserCheck size={20} /><span>Clients</span></div>
+          <div className={`nav-item ${filters.statut === 'Prospect' ? 'active' : ''}`} onClick={() => { setActiveView('contacts'); setFilters({statut: 'Prospect', consultant: '', scpi: '', annee: ''}); setSelectedContact(null); }} data-testid="nav-prospects"><TrendingUp size={20} /><span>Prospects</span></div>
           <div style={{ marginTop: 32, padding: '0 8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 24 }}>
             <p style={{ fontSize: 11, color: '#64748b', marginBottom: 12, textTransform: 'uppercase' }}>Top Consultants</p>
-            {Object.entries(STATS_DATA.consultants).slice(0,5).map(([n,c])=>(<div key={n} onClick={()=>{setActiveView('contacts');setFilters({statut:'',consultant:n,scpi:'',annee:''});setSelectedContact(null);}} style={{display:'flex',justifyContent:'space-between',padding:'8px 12px',borderRadius:8,cursor:'pointer',fontSize:13,color:'#94a3b8'}}><span>{n}</span><span style={{color:'#6366f1'}}>{c}</span></div>))}
+            {Object.entries(stats.consultants).slice(0,5).map(([n,c])=>(<div key={n} onClick={()=>{setActiveView('contacts');setFilters({statut:'',consultant:n,scpi:'',annee:''});setSelectedContact(null);}} style={{display:'flex',justifyContent:'space-between',padding:'8px 12px',borderRadius:8,cursor:'pointer',fontSize:13,color:'#94a3b8'}} data-testid={`consultant-${n}`}><span>{n}</span><span style={{color:'#6366f1'}}>{c}</span></div>))}
           </div>
           <div style={{ marginTop: 24, padding: '0 8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 24 }}>
             <p style={{ fontSize: 11, color: '#64748b', marginBottom: 12, textTransform: 'uppercase' }}>Top SCPI</p>
-            {Object.entries(STATS_DATA.scpi).slice(0,5).map(([n,c])=>(<div key={n} onClick={()=>{setActiveView('contacts');setFilters({statut:'',consultant:'',scpi:n,annee:''});setSelectedContact(null);}} style={{display:'flex',justifyContent:'space-between',padding:'8px 12px',borderRadius:8,cursor:'pointer',fontSize:11,color:'#94a3b8'}}><span>{n}</span><span style={{color:'#ec4899'}}>{c}</span></div>))}
+            {Object.entries(stats.scpi).slice(0,5).map(([n,c])=>(<div key={n} onClick={()=>{setActiveView('contacts');setFilters({statut:'',consultant:'',scpi:n,annee:''});setSelectedContact(null);}} style={{display:'flex',justifyContent:'space-between',padding:'8px 12px',borderRadius:8,cursor:'pointer',fontSize:11,color:'#94a3b8'}} data-testid={`scpi-${n}`}><span>{n}</span><span style={{color:'#ec4899'}}>{c}</span></div>))}
           </div>
         </nav>
 
@@ -139,13 +176,13 @@ export default function CRMApplication() {
             <div className="glass-card" style={{ padding: 24, marginBottom: 24 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Filtres avancés</h3>
-                {activeFiltersCount > 0 && <button onClick={clearFilters} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}><X size={14} /> Effacer</button>}
+                {activeFiltersCount > 0 && <button onClick={clearFilters} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }} data-testid="button-clear-filters"><X size={14} /> Effacer</button>}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Statut</label><select className="input-field" value={filters.statut} onChange={e => handleFilterChange('statut', e.target.value)}><option value="">Tous</option>{filterOptions.statuts.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Consultant</label><select className="input-field" value={filters.consultant} onChange={e => handleFilterChange('consultant', e.target.value)}><option value="">Tous</option>{filterOptions.consultants.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>SCPI</label><select className="input-field" value={filters.scpi} onChange={e => handleFilterChange('scpi', e.target.value)}><option value="">Toutes</option>{filterOptions.scpis.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Année</label><select className="input-field" value={filters.annee} onChange={e => handleFilterChange('annee', e.target.value)}><option value="">Toutes</option>{filterOptions.annees.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Statut</label><select className="input-field" value={filters.statut} onChange={e => handleFilterChange('statut', e.target.value)} data-testid="filter-statut"><option value="">Tous</option>{filterOptions.statuts.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Consultant</label><select className="input-field" value={filters.consultant} onChange={e => handleFilterChange('consultant', e.target.value)} data-testid="filter-consultant"><option value="">Tous</option>{filterOptions.consultants.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>SCPI</label><select className="input-field" value={filters.scpi} onChange={e => handleFilterChange('scpi', e.target.value)} data-testid="filter-scpi"><option value="">Toutes</option>{filterOptions.scpis.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                <div><label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Année</label><select className="input-field" value={filters.annee} onChange={e => handleFilterChange('annee', e.target.value)} data-testid="filter-annee"><option value="">Toutes</option>{filterOptions.annees.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
               </div>
             </div>
           )}
@@ -153,25 +190,25 @@ export default function CRMApplication() {
           {activeView === 'dashboard' && !selectedContact && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 32 }}>
-                <div className="stat-card"><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(99,102,241,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Users size={24} color="#818cf8" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>Total</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono' }}>{STATS_DATA.total.toLocaleString()}</p></div>
-                <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.05))', borderColor: 'rgba(34,197,94,0.2)' }}><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(34,197,94,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><UserCheck size={24} color="#4ade80" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>Clients</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono', color: '#4ade80' }}>{STATS_DATA.clients.toLocaleString()}</p><p style={{ margin: '8px 0 0', fontSize: 13, color: '#64748b' }}>{((STATS_DATA.clients / STATS_DATA.total) * 100).toFixed(1)}%</p></div>
-                <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.05))', borderColor: 'rgba(59,130,246,0.2)' }}><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(59,130,246,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><TrendingUp size={24} color="#60a5fa" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>Prospects</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono', color: '#60a5fa' }}>{STATS_DATA.prospects.toLocaleString()}</p></div>
-                <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(236,72,153,0.1), rgba(219,39,119,0.05))', borderColor: 'rgba(236,72,153,0.2)' }}><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(236,72,153,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Building2 size={24} color="#f472b6" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>SCPI</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono', color: '#f472b6' }}>{Object.values(STATS_DATA.scpi).reduce((a, b) => a + b, 0).toLocaleString()}</p></div>
+                <div className="stat-card" data-testid="stat-total"><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(99,102,241,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Users size={24} color="#818cf8" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>Total</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.total.toLocaleString()}</p></div>
+                <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.05))', borderColor: 'rgba(34,197,94,0.2)' }} data-testid="stat-clients"><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(34,197,94,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><UserCheck size={24} color="#4ade80" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>Clients</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono', color: '#4ade80' }}>{stats.clients.toLocaleString()}</p><p style={{ margin: '8px 0 0', fontSize: 13, color: '#64748b' }}>{((stats.clients / stats.total) * 100).toFixed(1)}%</p></div>
+                <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.05))', borderColor: 'rgba(59,130,246,0.2)' }} data-testid="stat-prospects"><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(59,130,246,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><TrendingUp size={24} color="#60a5fa" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>Prospects</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono', color: '#60a5fa' }}>{stats.prospects.toLocaleString()}</p></div>
+                <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(236,72,153,0.1), rgba(219,39,119,0.05))', borderColor: 'rgba(236,72,153,0.2)' }} data-testid="stat-scpi"><div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}><div style={{ width: 48, height: 48, background: 'rgba(236,72,153,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Building2 size={24} color="#f472b6" /></div><span style={{ color: '#94a3b8', fontSize: 14 }}>SCPI</span></div><p style={{ margin: 0, fontSize: 36, fontWeight: 700, fontFamily: 'Space Mono', color: '#f472b6' }}>{Object.values(stats.scpi).reduce((a, b) => a + b, 0).toLocaleString()}</p></div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
-                <div className="glass-card" style={{ padding: 24 }}><h3 style={{ margin: '0 0 24px', fontSize: 16, fontWeight: 600 }}><Activity size={20} color="#818cf8" style={{verticalAlign:'middle',marginRight:10}} />Évolution par année</h3><div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 200 }}>{Object.entries(STATS_DATA.annees).map(([y, c]) => { const max = Math.max(...Object.values(STATS_DATA.annees)); return (<div key={y} style={{ flex: 1, textAlign: 'center' }}><div className="chart-bar" style={{ height: (c / max) * 180, margin: '0 auto', width: '80%' }} /><p style={{ margin: '8px 0 0', fontSize: 11, color: '#64748b' }}>{y}</p><p style={{ margin: '2px 0 0', fontSize: 10, color: '#94a3b8' }}>{c}</p></div>); })}</div></div>
-                <div className="glass-card" style={{ padding: 24 }}><h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}><PieChart size={20} color="#f472b6" style={{verticalAlign:'middle',marginRight:10}} />Top SCPI</h3><div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{Object.entries(STATS_DATA.scpi).slice(0, 8).map(([n, c]) => { const max = Math.max(...Object.values(STATS_DATA.scpi)); return (<div key={n}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}><span style={{ fontSize: 12, color: '#94a3b8' }}>{n}</span><span style={{ fontSize: 12, color: '#f472b6', fontFamily: 'Space Mono' }}>{c}</span></div><div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3 }}><div style={{ width: `${(c / max) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #ec4899, #f472b6)', borderRadius: 3 }} /></div></div>); })}</div></div>
+                <div className="glass-card" style={{ padding: 24 }}><h3 style={{ margin: '0 0 24px', fontSize: 16, fontWeight: 600 }}><Activity size={20} color="#818cf8" style={{verticalAlign:'middle',marginRight:10}} />Évolution par année</h3><div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 200 }}>{Object.entries(stats.annees).map(([y, c]) => { const max = Math.max(...Object.values(stats.annees)); return (<div key={y} style={{ flex: 1, textAlign: 'center' }}><div className="chart-bar" style={{ height: (c / max) * 180, margin: '0 auto', width: '80%' }} /><p style={{ margin: '8px 0 0', fontSize: 11, color: '#64748b' }}>{y}</p><p style={{ margin: '2px 0 0', fontSize: 10, color: '#94a3b8' }}>{c}</p></div>); })}</div></div>
+                <div className="glass-card" style={{ padding: 24 }}><h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}><PieChart size={20} color="#f472b6" style={{verticalAlign:'middle',marginRight:10}} />Top SCPI</h3><div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{Object.entries(stats.scpi).slice(0, 8).map(([n, c]) => { const max = Math.max(...Object.values(stats.scpi)); return (<div key={n}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}><span style={{ fontSize: 12, color: '#94a3b8' }}>{n}</span><span style={{ fontSize: 12, color: '#f472b6', fontFamily: 'Space Mono' }}>{c}</span></div><div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3 }}><div style={{ width: `${(c / max) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #ec4899, #f472b6)', borderRadius: 3 }} /></div></div>); })}</div></div>
               </div>
-              <div className="glass-card" style={{ padding: 24, marginTop: 24 }}><h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}><User size={20} color="#8b5cf6" style={{verticalAlign:'middle',marginRight:10}} />Consultants</h3><div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>{Object.entries(STATS_DATA.consultants).slice(0, 10).map(([n, c]) => (<div key={n} onClick={() => { setActiveView('contacts'); setFilters({statut: '', consultant: n, scpi: '', annee: ''}); }} style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 12, padding: 16, textAlign: 'center', cursor: 'pointer' }}><div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 14, fontWeight: 700 }}>{n}</div><p style={{ margin: 0, fontSize: 24, fontWeight: 700, fontFamily: 'Space Mono' }}>{c}</p></div>))}</div></div>
+              <div className="glass-card" style={{ padding: 24, marginTop: 24 }}><h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}><User size={20} color="#8b5cf6" style={{verticalAlign:'middle',marginRight:10}} />Consultants</h3><div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>{Object.entries(stats.consultants).slice(0, 10).map(([n, c]) => (<div key={n} onClick={() => { setActiveView('contacts'); setFilters({statut: '', consultant: n, scpi: '', annee: ''}); }} style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: 12, padding: 16, textAlign: 'center', cursor: 'pointer' }} data-testid={`consultant-card-${n}`}><div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 14, fontWeight: 700 }}>{n}</div><p style={{ margin: 0, fontSize: 24, fontWeight: 700, fontFamily: 'Space Mono' }}>{c}</p></div>))}</div></div>
             </div>
           )}
 
           {activeView === 'contacts' && !selectedContact && (
             <div>
-              <div style={{ marginBottom: 24 }}><h2 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{filteredContacts.length.toLocaleString()} contacts</h2><p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{searchQuery ? `Recherche: "${searchQuery}"` : activeFiltersCount > 0 ? `${activeFiltersCount} filtre(s)` : 'Tous'}</p></div>
+              <div style={{ marginBottom: 24 }}><h2 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{contacts.length.toLocaleString()} contacts</h2><p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{searchQuery ? `Recherche: "${searchQuery}"` : activeFiltersCount > 0 ? `${activeFiltersCount} filtre(s)` : 'Tous'}</p></div>
               {paginatedContacts.length === 0 ? (<div style={{ textAlign: 'center', padding: 60, color: '#64748b' }}><Search size={48} style={{ marginBottom: 16, opacity: 0.5 }} /><p>Aucun contact trouvé</p></div>) : (
                 paginatedContacts.map((contact) => (
-                  <div key={contact.id} className="contact-row" onClick={() => setSelectedContact(contact)}>
+                  <div key={contact.id} className="contact-row" onClick={() => setSelectedContact(contact)} data-testid={`contact-row-${contact.id}`}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         <div style={{ width: 44, height: 44, background: contact.statut === 'Client' ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'linear-gradient(135deg, #3b82f6, #2563eb)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600 }}>{contact.nom ? contact.nom.charAt(0).toUpperCase() : '?'}</div>
@@ -187,13 +224,13 @@ export default function CRMApplication() {
                   </div>
                 ))
               )}
-              {totalPages > 1 && (<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginTop: 32 }}><button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 16px', color: currentPage === 1 ? '#475569' : '#e2e8f0', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}><ChevronLeft size={16} /> Préc.</button><span style={{ color: '#94a3b8', fontSize: 14 }}>Page {currentPage}/{totalPages}</span><button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 16px', color: currentPage === totalPages ? '#475569' : '#e2e8f0', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>Suiv. <ChevronRight size={16} /></button></div>)}
+              {totalPages > 1 && (<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginTop: 32 }}><button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 16px', color: currentPage === 1 ? '#475569' : '#e2e8f0', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} data-testid="button-prev-page"><ChevronLeft size={16} /> Préc.</button><span style={{ color: '#94a3b8', fontSize: 14 }}>Page {currentPage}/{totalPages}</span><button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 16px', color: currentPage === totalPages ? '#475569' : '#e2e8f0', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }} data-testid="button-next-page">Suiv. <ChevronRight size={16} /></button></div>)}
             </div>
           )}
 
           {selectedContact && (
             <div>
-              <button onClick={() => setSelectedContact(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }}><ChevronLeft size={18} />Retour</button>
+              <button onClick={() => setSelectedContact(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }} data-testid="button-back"><ChevronLeft size={18} />Retour</button>
               <div className="glass-card" style={{ padding: 32 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, marginBottom: 32 }}>
                   <div style={{ width: 80, height: 80, background: selectedContact.statut === 'Client' ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'linear-gradient(135deg, #3b82f6, #2563eb)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700 }}>{selectedContact.nom ? selectedContact.nom.charAt(0).toUpperCase() : '?'}</div>
@@ -219,23 +256,16 @@ export default function CRMApplication() {
                   <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 20, border: '1px solid rgba(255,255,255,0.05)' }}>
                     <h4 style={{ margin: '0 0 16px', fontSize: 14, color: '#64748b', textTransform: 'uppercase' }}>Informations</h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><Calendar size={18} color="#8b5cf6" /><span>Créé le {selectedContact.date_creation || '—'}</span></div>
-                      {selectedContact.marketing && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><Tag size={18} color="#60a5fa" /><span style={{ fontSize: 13 }}>{selectedContact.marketing}</span></div>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><Calendar size={18} color="#a78bfa" /><span>Créé le {selectedContact.date_creation || '—'}</span></div>
+                      {selectedContact.scpi && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}><Building2 size={18} color="#f472b6" /><span>{selectedContact.scpi}</span></div>}
+                      {selectedContact.marketing && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><Tag size={18} color="#fbbf24" /><span>{selectedContact.marketing}</span></div>}
                     </div>
                   </div>
                 </div>
-                {selectedContact.scpi && (
-                  <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 20, marginTop: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, color: '#64748b', textTransform: 'uppercase' }}><Building2 size={16} color="#f472b6" style={{verticalAlign:'middle',marginRight:8}} />SCPI</h4>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {selectedContact.scpi.split(' - ').map((s, i) => (<span key={i} style={{ background: 'rgba(236,72,153,0.15)', color: '#f472b6', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid rgba(236,72,153,0.3)' }}>{s.trim()}</span>))}
-                    </div>
-                  </div>
-                )}
                 {selectedContact.commentaires && (
                   <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 20, marginTop: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <h4 style={{ margin: '0 0 12px', fontSize: 14, color: '#64748b', textTransform: 'uppercase' }}><MessageSquare size={16} style={{verticalAlign:'middle',marginRight:8}} />Commentaires</h4>
-                    <p style={{ margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{selectedContact.commentaires}</p>
+                    <h4 style={{ margin: '0 0 12px', fontSize: 14, color: '#64748b', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}><MessageSquare size={16} />Commentaires</h4>
+                    <p style={{ margin: 0, color: '#cbd5e1', lineHeight: 1.6 }}>{selectedContact.commentaires}</p>
                   </div>
                 )}
               </div>
