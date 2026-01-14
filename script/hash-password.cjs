@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 
-const password = 'F9!rQ@Zp6M#tA8$LxS2^eK';
+const password = 'CrmSecure2024';
 const saltRounds = 12;
 
 bcrypt.hash(password, saltRounds, function(err, hash) {
@@ -8,6 +8,7 @@ bcrypt.hash(password, saltRounds, function(err, hash) {
     console.error('Error:', err);
     process.exit(1);
   }
-  console.log('Password hash:');
+  console.log('Mot de passe: CrmSecure2024');
+  console.log('Hash:');
   console.log(hash);
 });
