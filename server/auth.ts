@@ -45,8 +45,12 @@ export function isAuthenticated(req: Request, res: Response, next: NextFunction)
 
 export async function verifyCredentials(email: string, password: string): Promise<boolean> {
   const adminEmail = (process.env.ADMIN_EMAIL || "tech@sereniteo.fr").trim();
-  // Hash for password: Xk9#mTp2$vLq7@Rn5W
-  const adminPasswordHash = "$2b$12$Av5smn8VO0MaUxr5XSU7XuM5JcFB2Fcha2GhhxQdJP2vYBzs.jMcy";
+  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+
+  if (!adminPasswordHash || adminPasswordHash.length < 50) {
+    console.error("ADMIN_PASSWORD_HASH not configured correctly. Length:", adminPasswordHash?.length || 0);
+    return false;
+  }
 
   if (email.trim().toLowerCase() !== adminEmail.toLowerCase()) {
     console.log("Email mismatch");
