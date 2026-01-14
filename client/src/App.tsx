@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
+import MagicVerify from "@/pages/MagicVerify";
 import CRMApplication from "./CRMApplication";
 import { useEffect } from "react";
 
@@ -51,6 +52,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/magic" component={MagicVerify} />
       <Route path="/">
         {() => <ProtectedRoute component={CRMApplication} />}
       </Route>

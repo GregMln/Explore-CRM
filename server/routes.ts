@@ -2,33 +2,74 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertContactSchema } from "@shared/schema";
-import { isAuthenticated, verifyCredentials } from "./auth";
+import { isAuthenticated, isEmailAllowed, createMagicLinkToken, verifyMagicToken } from "./auth";
+import { sendMagicLinkEmail } from "./email";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
-  app.post("/api/auth/login", async (req, res) => {
+  // Magic link authentication
+  app.post("/api/auth/magic-link", async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email } = req.body;
       
-      if (!email || !password) {
-        return res.status(400).json({ error: "Email et mot de passe requis" });
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ error: "Email requis" });
       }
 
-      const isValid = await verifyCredentials(email, password);
+      const normalizedEmail = email.trim().toLowerCase();
       
-      if (isValid) {
-        req.session.isAuthenticated = true;
-        req.session.userEmail = email;
-        res.json({ success: true, email });
-      } else {
-        res.status(401).json({ error: "Identifiants invalides" });
+      // Always return success to prevent email enumeration
+      if (!isEmailAllowed(normalizedEmail)) {
+        console.log(`Magic link request for non-allowed email: ${normalizedEmail}`);
+        return res.json({ success: true, message: "Si cet email est autorisé, vous recevrez un lien de connexion." });
       }
+
+      const token = await createMagicLinkToken(normalizedEmail);
+      
+      if (!token) {
+        return res.status(500).json({ error: "Erreur lors de la création du lien" });
+      }
+
+      const baseUrl = process.env.APP_BASE_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+      const magicLink = `${baseUrl}/magic?token=${token}`;
+      
+      const emailSent = await sendMagicLinkEmail(normalizedEmail, magicLink);
+      
+      if (!emailSent) {
+        console.error("Failed to send magic link email");
+      }
+
+      res.json({ success: true, message: "Si cet email est autorisé, vous recevrez un lien de connexion." });
     } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ error: "Erreur de connexion" });
+      console.error("Magic link error:", error);
+      res.status(500).json({ error: "Erreur lors de l'envoi du lien" });
+    }
+  });
+
+  app.post("/api/auth/magic-link/verify", async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ error: "Token requis" });
+      }
+
+      const email = await verifyMagicToken(token);
+      
+      if (!email) {
+        return res.status(401).json({ error: "Lien invalide ou expiré" });
+      }
+
+      req.session.isAuthenticated = true;
+      req.session.userEmail = email;
+      
+      res.json({ success: true, email });
+    } catch (error) {
+      console.error("Magic link verify error:", error);
+      res.status(500).json({ error: "Erreur de vérification" });
     }
   });
 
