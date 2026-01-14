@@ -46,14 +46,10 @@ export function isAuthenticated(req: Request, res: Response, next: NextFunction)
   res.status(401).json({ error: "Non authentifié" });
 }
 
-// Allowed emails that can receive magic links
-const ALLOWED_EMAILS = [
-  "tech@sereniteo.fr",
-  // Add more allowed emails here
-];
-
+// Only allow emails from sereniteo.fr domain
 export function isEmailAllowed(email: string): boolean {
-  return ALLOWED_EMAILS.includes(email.trim().toLowerCase());
+  const normalizedEmail = email.trim().toLowerCase();
+  return normalizedEmail.endsWith('@sereniteo.fr');
 }
 
 export function generateMagicToken(): { token: string; tokenHash: string } {
