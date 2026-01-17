@@ -1,0 +1,30 @@
+name: Deploy to VPS
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            APP_DIR="/var/www/apps/${{ github.event.repository.name }}"
+
+            if [ ! -d "$APP_DIR" ]; then
+              echo "🆕 Première installation..."
+              /root/setup-new-app.sh "${{ github.event.repository.name }}" "https://github.com/${{ github.repository }}.git"
+            else
+              echo "🔄 Mise à jour..."
+              cd $APP_DIR
+              git pull
+              docker-compose up -d --build
+            fi
+
+            echo "✅ Déployé!"
