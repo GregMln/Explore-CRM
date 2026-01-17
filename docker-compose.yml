@@ -1,0 +1,36 @@
+services:
+  app:
+    build: .
+    container_name: crm-sereniteo
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://crm:${DB_PASSWORD}@db:5432/crm
+      - SESSION_SECRET=${SESSION_SECRET}
+      - APP_BASE_URL=${APP_BASE_URL}
+      - BREVO_API_KEY=${BREVO_API_KEY}
+      - BREVO_FROM_EMAIL=${BREVO_FROM_EMAIL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: crm-postgres
+    environment:
+      - POSTGRES_USER=crm
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=crm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
