@@ -16,7 +16,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             APP_DIR="/var/www/apps/${{ github.event.repository.name }}"
-
+            
             if [ ! -d "$APP_DIR" ]; then
               echo "🆕 Première installation..."
               /root/setup-new-app.sh "${{ github.event.repository.name }}" "https://github.com/${{ github.repository }}.git"
@@ -26,5 +26,5 @@ jobs:
               git pull
               docker-compose up -d --build
             fi
-
+            
             echo "✅ Déployé!"
